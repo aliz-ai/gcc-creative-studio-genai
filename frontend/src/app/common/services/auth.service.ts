@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {Injectable, PLATFORM_ID, inject} from '@angular/core';
+import {Injectable, PLATFORM_ID, inject, NgZone} from '@angular/core';
 import {Router} from '@angular/router';
 import {UserModel, UserRolesEnum} from '../models/user.model';
 import {HttpClient, HttpHeaders, HttpErrorResponse} from '@angular/common/http';
@@ -59,6 +59,7 @@ export class AuthService {
     private router: Router,
     private httpClient: HttpClient,
     private userService: UserService,
+    private ngZone: NgZone,
   ) {
     this.provider.setCustomParameters({
       // Set custom params for the provider
@@ -189,43 +190,56 @@ export class AuthService {
         );
       }
 
-      const loginTimeout = setTimeout(() => {
-        observer.error(
-          new Error(
-            'Login timed out or third party sign-in may be disabled. Please try again and enable third party sign-in by clicking on the information button at the top left side of the browser.',
-          ),
-        );
-      }, 15000);
-
       try {
         google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: (response: any) => {
-            clearTimeout(loginTimeout);
             const idToken = response.credential;
             if (idToken) {
-              observer.next(idToken);
-              observer.complete();
+              this.ngZone.run(() => {
+                observer.next(idToken);
+                observer.complete();
+              });
             } else {
-              observer.error(
-                new Error(
-                  'Google Sign-In response did not contain a credential.',
-                ),
-              );
+              this.ngZone.run(() => {
+                observer.error(
+                  new Error(
+                    'Google Sign-In response did not contain a credential.',
+                  ),
+                );
+              });
             }
           },
         });
 
-        // Trigger the One Tap prompt.
-        // Per new docs, we don't use the notification object for flow control.
-        google.accounts.id.prompt();
+        // Render the buttons on the containers we created in the HTML
+        const desktopBtn = document.getElementById('google-signin-btn-desktop');
+        const mobileBtn = document.getElementById('google-signin-btn-mobile');
+
+        if (desktopBtn) {
+          google.accounts.id.renderButton(
+            desktopBtn,
+            {theme: 'outline', size: 'large', text: 'signin_with', width: 250}, // customization attributes
+          );
+        }
+
+        if (mobileBtn) {
+          google.accounts.id.renderButton(
+            mobileBtn,
+            {theme: 'outline', size: 'large', text: 'signin_with', width: 250}, // customization attributes
+          );
+        }
+
+        // We DO NOT call google.accounts.id.prompt() to avoid FedCM / third party cookies errors
+        // Instead, the user must click the rendered button.
       } catch (error) {
-        clearTimeout(loginTimeout);
         console.error(
           'Error during Google Identity Platform sign-in initialization:',
           error,
         );
-        observer.error(error);
+        this.ngZone.run(() => {
+          observer.error(error);
+        });
       }
     });
   }
