@@ -16,19 +16,20 @@
 
 export const environment = {
   firebase: {
-    apiKey: '',
-    authDomain: '',
-    projectId: '',
-    storageBucket: '',
-    messagingSenderId: '',
-    appId: '',
-    measurementId: '',
+    apiKey: 'AIzaSyDtkmg2_hz2N_TyUHFjyNiwUgEVUnQV098',
+    authDomain: 'aliz-genai.firebaseapp.com',
+    projectId: 'aliz-genai',
+    storageBucket: 'aliz-genai.firebasestorage.app',
+    messagingSenderId: '649321063407',
+    appId: '1:649321063407:web:f349f5fb734dd7705b0c1a',
+    measurementId: 'G-L5W0MEDKYB',
   },
-  production: true,
-  isLocal: false,
+  production: false,
+  isLocal: true,
   backendURL: 'http://localhost:8080/api',
   EMAIL_REGEX:
     /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
   ADMIN: 'admin',
-  GOOGLE_CLIENT_ID: '',
+  GOOGLE_CLIENT_ID:
+    '649321063407-6qh3erjr6jg3ek9mgkigrrtrbs2jm63n.apps.googleusercontent.com',
 };
