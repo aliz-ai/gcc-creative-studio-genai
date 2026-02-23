@@ -158,7 +158,6 @@ export class AuthService {
     return this.promptForIdentityPlatformToken$().pipe(
       switchMap(idToken => {
         const payload = JSON.parse(atob(idToken.split('.')[1]));
-        const userEmail = payload.email?.toLowerCase();
 
         // If allowed, proceed to save session and return token
         this.firebaseIdToken = idToken;
@@ -182,65 +181,93 @@ export class AuthService {
     const GOOGLE_CLIENT_ID = environment.GOOGLE_CLIENT_ID;
 
     return new Observable<string>(observer => {
-      if (typeof google === 'undefined') {
-        return observer.error(
-          new Error(
-            'Google Identity Services script not loaded. Add it to index.html',
-          ),
-        );
-      }
+      let attempts = 0;
+      const maxAttempts = 50; // 50 * 100ms = 5 seconds
 
-      try {
-        google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: (response: any) => {
-            const idToken = response.credential;
-            if (idToken) {
-              this.ngZone.run(() => {
-                observer.next(idToken);
-                observer.complete();
-              });
-            } else {
-              this.ngZone.run(() => {
-                observer.error(
-                  new Error(
-                    'Google Sign-In response did not contain a credential.',
-                  ),
-                );
-              });
-            }
-          },
-        });
-
-        // Render the buttons on the containers we created in the HTML
-        const desktopBtn = document.getElementById('google-signin-btn-desktop');
-        const mobileBtn = document.getElementById('google-signin-btn-mobile');
-
-        if (desktopBtn) {
-          google.accounts.id.renderButton(
-            desktopBtn,
-            {theme: 'outline', size: 'large', text: 'signin_with', width: 250}, // customization attributes
-          );
+      const initializeGoogleSignIn = () => {
+        if (typeof google === 'undefined') {
+          attempts++;
+          if (attempts >= maxAttempts) {
+            this.ngZone.run(() => {
+              observer.error(
+                new Error(
+                  'Google Identity Services script not loaded. Add it to index.html',
+                ),
+              );
+            });
+            return;
+          }
+          setTimeout(initializeGoogleSignIn, 100); // Check again in 100ms
+          return;
         }
 
-        if (mobileBtn) {
-          google.accounts.id.renderButton(
-            mobileBtn,
-            {theme: 'outline', size: 'large', text: 'signin_with', width: 250}, // customization attributes
-          );
-        }
+        try {
+          google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: (response: any) => {
+              const idToken = response.credential;
+              if (idToken) {
+                this.ngZone.run(() => {
+                  observer.next(idToken);
+                  observer.complete();
+                });
+              } else {
+                this.ngZone.run(() => {
+                  observer.error(
+                    new Error(
+                      'Google Sign-In response did not contain a credential.',
+                    ),
+                  );
+                });
+              }
+            },
+          });
 
-        // We DO NOT call google.accounts.id.prompt() to avoid FedCM / third party cookies errors
-        // Instead, the user must click the rendered button.
-      } catch (error) {
-        console.error(
-          'Error during Google Identity Platform sign-in initialization:',
-          error,
-        );
-        this.ngZone.run(() => {
-          observer.error(error);
-        });
-      }
+          // Render the buttons on the containers we created in the HTML
+          const desktopBtn = document.getElementById(
+            'google-signin-btn-desktop',
+          );
+          const mobileBtn = document.getElementById('google-signin-btn-mobile');
+
+          if (desktopBtn) {
+            google.accounts.id.renderButton(
+              desktopBtn,
+              {
+                theme: 'outline',
+                size: 'large',
+                text: 'signin_with',
+                width: 250,
+              }, // customization attributes
+            );
+          }
+
+          if (mobileBtn) {
+            google.accounts.id.renderButton(
+              mobileBtn,
+              {
+                theme: 'outline',
+                size: 'large',
+                text: 'signin_with',
+                width: 250,
+              }, // customization attributes
+            );
+          }
+
+          // We DO NOT call google.accounts.id.prompt() to avoid FedCM / third party cookies errors
+          // Instead, the user must click the rendered button.
+        } catch (error) {
+          console.error(
+            'Error during Google Identity Platform sign-in initialization:',
+            error,
+          );
+          this.ngZone.run(() => {
+            observer.error(error);
+          });
+        }
+      };
+
+      // Start the initialization process
+      initializeGoogleSignIn();
     });
   }
 
