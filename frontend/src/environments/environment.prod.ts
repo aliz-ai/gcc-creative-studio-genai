@@ -16,20 +16,19 @@
 
 export const environment = {
   firebase: {
-    apiKey: 'AIzaSyDtkmg2_hz2N_TyUHFjyNiwUgEVUnQV098',
-    authDomain: 'aliz-genai.firebaseapp.com',
-    projectId: 'aliz-genai',
-    storageBucket: 'aliz-genai.firebasestorage.app',
-    messagingSenderId: '649321063407',
-    appId: '1:649321063407:web:f349f5fb734dd7705b0c1a',
-    measurementId: 'G-L5W0MEDKYB',
+    apiKey: 'FIREBASE_API_KEY_PLACEHOLDER',
+    authDomain: 'FIREBASE_AUTH_DOMAIN_PLACEHOLDER',
+    projectId: 'FIREBASE_PROJECT_ID_PLACEHOLDER',
+    storageBucket: 'FIREBASE_STORAGE_BUCKET_PLACEHOLDER',
+    messagingSenderId: 'FIREBASE_SENDER_ID_PLACEHOLDER',
+    appId: 'FIREBASE_APP_ID_PLACEHOLDER',
+    measurementId: 'FIREBASE_MEASUREMENT_ID_PLACEHOLDER',
   },
-  production: false,
-  isLocal: true,
-  backendURL: 'http://localhost:8080/api',
+  production: true,
+  isLocal: false,
+  backendURL: 'BACKEND_URL_PLACEHOLDER',
   EMAIL_REGEX:
     /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
   ADMIN: 'admin',
-  GOOGLE_CLIENT_ID:
-    '649321063407-6qh3erjr6jg3ek9mgkigrrtrbs2jm63n.apps.googleusercontent.com',
+  GOOGLE_CLIENT_ID: 'GOOGLE_CLIENT_ID_PLACEHOLDER',
 };
