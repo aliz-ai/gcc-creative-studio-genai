@@ -20,8 +20,7 @@ import {Router} from '@angular/router';
 import {AuthService} from './../common/services/auth.service';
 import {UserModel} from './../common/models/user.model';
 import {MatSnackBar} from '@angular/material/snack-bar';
-import { handleErrorSnackbar } from '../utils/handleMessageSnackbar';
-import {environment} from '../../environments/environment';
+import {handleErrorSnackbar} from '../utils/handleMessageSnackbar';
 
 const HOME_ROUTE = '/';
 
@@ -59,70 +58,40 @@ export class LoginComponent {
     this.invalidLogin = false;
     this.errorMessage = '';
 
-    if (environment?.isLocal) {
-      // This will use the Google Identity Services library to get an FIREBASE-compatible token.
-      this.authService.signInWithGoogleFirebase().subscribe({
-        next: (firebaseToken: string) => {
-          // The signInForGoogleIdentityPlatform method already stored the token and minimal user details
-          // in localStorage. We just need to redirect to trigger the AuthGuard.
-          this.ngZone.run(() => {
-            this.loader = false;
-            void this.router.navigate([HOME_ROUTE]);
-          });
-        },
-        error: error => {
+    // Usamos signInWithPopup a través de Firebase en todos los entornos
+    // para evitar problemas con FedCM / third-party cookies en producción.
+    this.authService.signInWithGoogleFirebase().subscribe({
+      next: (firebaseToken: string) => {
+        // The service already stored the token and minimal user details
+        // in localStorage. We just need to redirect to trigger the AuthGuard.
+        this.ngZone.run(() => {
           this.loader = false;
-          console.log(error);
-          // Handle specific errors from the auth service
-          if (
-            error.message?.includes('timed out') ||
-            error.message?.includes('Access Denied')
-          ) {
-            this.handleLoginError(error.message);
-          } else {
-            this.handleLoginError(
-              error ||
-                'An unexpected error occurred during sign-in. Please try again.',
-            );
-          }
-          console.error('FIREBASE Login Process Error:', error);
-        },
-      });
-    } else {
-      // This will use the Google Identity Services library to get an FIREBASE-compatible token.
-      this.authService.signInForGoogleIdentityPlatform().subscribe({
-        next: (firebaseToken: string) => {
-          // The signInForGoogleIdentityPlatform method already stored the token and minimal user details
-          // in localStorage. We just need to redirect to trigger the AuthGuard.
-          this.ngZone.run(() => {
-            this.loader = false;
-            void this.router.navigate([HOME_ROUTE]);
-          });
-        },
-        error: error => {
-          this.loader = false;
-          console.log(error);
-          // Handle specific errors from the auth service
-          if (
-            error.message?.includes('timed out') ||
-            error.message?.includes('Access Denied')
-          ) {
-            this.handleLoginError(error.message);
-          } else {
-            this.handleLoginError(
-              error ||
-                'An unexpected error occurred during sign-in. Please try again.',
-            );
-          }
-          console.error('FIREBASE Login Process Error:', error);
-        },
-      });
-    }
+          void this.router.navigate([HOME_ROUTE]);
+        });
+      },
+      error: error => {
+        this.loader = false;
+        console.log(error);
+        // Handle specific errors from the auth service
+        if (
+          error.message?.includes('timed out') ||
+          error.message?.includes('Access Denied')
+        ) {
+          this.handleLoginError(error.message);
+        } else {
+          this.handleLoginError(
+            error ||
+              'An unexpected error occurred during sign-in. Please try again.',
+          );
+        }
+        console.error('FIREBASE Login Process Error:', error);
+      },
+    });
   }
 
   private handleLoginError(message: string, postErrorAction?: () => void) {
     this.loader = false;
-    handleErrorSnackbar(this._snackBar, { message: message }, 'Login Error');
+    handleErrorSnackbar(this._snackBar, {message: message}, 'Login Error');
     if (postErrorAction) {
       postErrorAction();
     }
