@@ -123,13 +123,10 @@ module "backend_service" {
     }
   )
 
-  # database
   cloud_sql_connection_name = module.postgresql.connection_name
   db_name                   = module.postgresql.db_name
   db_user                   = module.postgresql.db_user
-
-  # Pass the Secret ID reference (NOT the value) for Cloud Run
-  db_secret_id = "creative-studio-db-password"
+  db_secret_id              = "creative-studio-db-password"
 }
 
 resource "google_firebase_project" "default" {
