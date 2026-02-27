@@ -23,7 +23,14 @@ resource "google_sql_database_instance" "default" {
   project          = var.project_id
 
   settings {
-    tier = "db-custom-1-3840"
+    tier    = "db-custom-1-3840"
+    edition = "ENTERPRISE"
+
+    backup_configuration {
+      enabled                        = true
+      point_in_time_recovery_enabled = true
+      transaction_log_retention_days = 7
+    }
 
     # Enable IAM Authentication for better security (optional but recommended)
     database_flags {
