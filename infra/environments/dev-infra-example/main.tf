@@ -14,8 +14,14 @@
 
 terraform {
   required_providers {
-    google      = { source = "hashicorp/google" }
-    google-beta = { source = "hashicorp/google-beta" }
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 7.0.0"
+    }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = ">= 7.0.0"
+    }
   }
 }
 
@@ -63,5 +69,5 @@ module "creative_studio_platform" {
   backend_secrets        = var.backend_secrets
   fe_build_substitutions = var.fe_build_substitutions
 
-  depends_on = [ google_project_service.apis ]
+  depends_on = [google_project_service.apis]
 }
