@@ -88,6 +88,8 @@
               "extractLicenses": true
             },
             "build-dev": {
+              "prerender": false,
+              "ssr": false,
               "budgets": [
                 {
                   "type": "initial",

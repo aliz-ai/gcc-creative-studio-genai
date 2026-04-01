@@ -75,6 +75,7 @@ class ConfigService(BaseSettings):
 
     # --- VTO ---
     VTO_MODEL_ID: str = "virtual-try-on-preview-08-04"
+    VTO_GEMINI_MODEL_ID: str = "gemini-2.5-flash-image"
 
     # --- Lyria ---
     LYRIA_MODEL_VERSION: str = "lyria-002"

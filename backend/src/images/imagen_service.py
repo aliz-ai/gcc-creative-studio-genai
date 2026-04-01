@@ -186,74 +186,99 @@ def _process_vto_in_background(
                             (inp, role) for inp, role in garment_inputs if inp is not None
                         ]
 
-                        final_response = None
+                        # --- Collect all garment GCS URIs upfront ---
+                        garment_role_labels = {
+                            AssetRoleEnum.VTO_TOP: "top/shirt",
+                            AssetRoleEnum.VTO_BOTTOM: "bottom/pants/skirt",
+                            AssetRoleEnum.VTO_DRESS: "dress",
+                            AssetRoleEnum.VTO_SHOE: "shoes",
+                        }
+                        garment_uris_and_roles = []
+                        for garment_input, role in active_garments:
+                            garment_uri = await get_gcs_uri_from_input(garment_input, role)
+                            garment_uris_and_roles.append((garment_uri, role))
 
-                        # --- Loop through each garment and apply it sequentially ---
-                        for i, (garment_input, role) in enumerate(active_garments):
-                            if garment_input:
-                                garment_gcs_uri = await get_gcs_uri_from_input(garment_input, role)
-                                person_image_part = types.Image(gcs_uri=current_person_gcs_uri)
-                                product_image_part = types.ProductImage(
-                                    product_image=types.Image(gcs_uri=garment_gcs_uri)
-                                )
-
-                                worker_logger.info(
-                                    f"Applying garment {i+1}/{len(active_garments)} with role {role}"
-                                )
-
-                                # Run sync API call in thread to avoid blocking the loop
-                                response = await asyncio.to_thread(
-                                    client.models.recontext_image,
-                                    model=cfg.VTO_MODEL_ID,
-                                    source=types.RecontextImageSource(
-                                        person_image=person_image_part,
-                                        product_images=[product_image_part],
-                                    ),
-                                    config=types.RecontextImageConfig(
-                                        output_gcs_uri=gcs_output_directory,
-                                        number_of_images=request_dto.number_of_media,
-                                    ),
-                                )
-
-                                if i == len(active_garments) - 1:
-                                    final_response = response
-                                elif (
-                                    response.generated_images
-                                    and response.generated_images[0].image
-                                ):
-                                    current_person_gcs_uri = response.generated_images[
-                                        0
-                                    ].image.gcs_uri
-
-                        if not final_response:
-                            raise ValueError(
-                                "VTO generation failed to produce a final result."
-                            )
-
-                        all_generated_images = final_response.generated_images or []
-
-                        if not all_generated_images:
-                            raise ValueError("No images generated from VTO process.")
-
-                        # Process results
-                        valid_generated_images = [
-                            img
-                            for img in all_generated_images
-                            if img.image and img.image.gcs_uri
-                        ]
-                        mime_type: MimeTypeEnum = (
-                            MimeTypeEnum.IMAGE_PNG
-                            if valid_generated_images[0].image
-                            and valid_generated_images[0].image.mime_type
-                            == MimeTypeEnum.IMAGE_PNG
-                            else MimeTypeEnum.IMAGE_JPEG
+                        garment_descriptions = ", ".join(
+                            garment_role_labels.get(role, "garment")
+                            for _, role in garment_uris_and_roles
+                        )
+                        vto_prompt = (
+                            f"You are a photorealistic virtual try-on system. "
+                            f"The first image shows a person. "
+                            f"The following {len(garment_uris_and_roles)} image(s) show the "
+                            f"garment(s) to be worn: {garment_descriptions}. "
+                            f"Replace ONLY the clothing on the person with the exact garment(s) shown. "
+                            f"Preserve every other detail with absolute precision: the person's exact "
+                            f"body position, pose, facial expression, skin tone, hairstyle, background, "
+                            f"lighting, and shadows must remain completely unchanged. "
+                            f"Fit each garment naturally to the body shape with realistic fabric "
+                            f"draping, wrinkles, and shadows consistent with the original lighting. "
+                            f"Do NOT alter the person's face, proportions, or background in any way. "
+                            f"Output a single photorealistic image."
                         )
 
-                        permanent_gcs_uris = [
-                            img.image.gcs_uri
-                            for img in valid_generated_images
-                            if img.image and img.image.gcs_uri
+                        # Build content parts: prompt + person image + all garment images
+                        vto_parts = [types.Part.from_text(text=vto_prompt)]
+                        vto_parts.append(
+                            types.Part.from_uri(
+                                file_uri=current_person_gcs_uri, mime_type="image/jpeg"
+                            )
+                        )
+                        for garment_uri, _ in garment_uris_and_roles:
+                            vto_parts.append(
+                                types.Part.from_uri(
+                                    file_uri=garment_uri, mime_type="image/jpeg"
+                                )
+                            )
+                        vto_contents = [types.Content(role="user", parts=vto_parts)]
+                        vto_gen_config = types.GenerateContentConfig(
+                            response_modalities=["Image"],
+                        )
+
+                        # --- Generate images in parallel using Gemini ---
+                        gcs_service = GcsService()
+
+                        async def _generate_single_vto():
+                            response = await asyncio.to_thread(
+                                client.models.generate_content,
+                                model=cfg.VTO_GEMINI_MODEL_ID,
+                                contents=vto_contents,
+                                config=vto_gen_config,
+                            )
+                            for candidate in (response.candidates or []):
+                                if candidate.content and candidate.content.parts:
+                                    for part in candidate.content.parts:
+                                        if part.inline_data:
+                                            content_type = part.inline_data.mime_type or "image/jpeg"
+                                            uri = gcs_service.store_to_gcs(
+                                                folder=cfg.IMAGEN_RECONTEXT_SUBFOLDER,
+                                                file_name=str(uuid.uuid4()),
+                                                mime_type=content_type,
+                                                contents=part.inline_data.data,
+                                                bucket_name=gcs_service.bucket_name,
+                                            )
+                                            if uri:
+                                                return uri, content_type
+                            return None, None
+
+                        worker_logger.info(
+                            f"Generating {request_dto.number_of_media} VTO image(s) in parallel "
+                            f"with model {cfg.VTO_GEMINI_MODEL_ID}"
+                        )
+                        vto_tasks = [
+                            _generate_single_vto()
+                            for _ in range(request_dto.number_of_media)
                         ]
+                        vto_results = await asyncio.gather(*vto_tasks)
+
+                        permanent_gcs_uris = [uri for uri, _ in vto_results if uri]
+                        if not permanent_gcs_uris:
+                            raise ValueError("No images generated from VTO process.")
+
+                        first_ct = next((ct for _, ct in vto_results if ct), "image/jpeg")
+                        mime_type: MimeTypeEnum = (
+                            MimeTypeEnum.IMAGE_PNG if "png" in first_ct else MimeTypeEnum.IMAGE_JPEG
+                        )
 
                         # Generate presigned URLs
                         presigned_urls = [
@@ -1001,81 +1026,94 @@ class ImagenService:
             (inp, role) for inp, role in garment_inputs if inp is not None
         ]
 
-        final_response = None
+        # --- Collect all garment GCS URIs upfront ---
+        garment_role_labels = {
+            AssetRoleEnum.VTO_TOP: "top/shirt",
+            AssetRoleEnum.VTO_BOTTOM: "bottom/pants/skirt",
+            AssetRoleEnum.VTO_DRESS: "dress",
+            AssetRoleEnum.VTO_SHOE: "shoes",
+        }
+        garment_uris_and_roles = []
+        for garment_input, role in active_garments:
+            garment_uri = await get_gcs_uri_from_input(garment_input, role)
+            garment_uris_and_roles.append((garment_uri, role))
 
-        # --- Loop through each garment and apply it sequentially ---
-        for i, (garment_input, role) in enumerate(active_garments):
-            if garment_input:
-                # Get the GCS URI for the current garment and log it as a source.
-                garment_gcs_uri = await get_gcs_uri_from_input(
-                    garment_input, role
+        garment_descriptions = ", ".join(
+            garment_role_labels.get(role, "garment")
+            for _, role in garment_uris_and_roles
+        )
+        vto_prompt = (
+            f"You are a photorealistic virtual try-on system. "
+            f"The first image shows a person. "
+            f"The following {len(garment_uris_and_roles)} image(s) show the "
+            f"garment(s) to be worn: {garment_descriptions}. "
+            f"Replace ONLY the clothing on the person with the exact garment(s) shown. "
+            f"Preserve every other detail with absolute precision: the person's exact "
+            f"body position, pose, facial expression, skin tone, hairstyle, background, "
+            f"lighting, and shadows must remain completely unchanged. "
+            f"Fit each garment naturally to the body shape with realistic fabric "
+            f"draping, wrinkles, and shadows consistent with the original lighting. "
+            f"Do NOT alter the person's face, proportions, or background in any way. "
+            f"Output a single photorealistic image."
+        )
+
+        # Build content parts: prompt + person image + all garment images
+        vto_parts = [types.Part.from_text(text=vto_prompt)]
+        vto_parts.append(
+            types.Part.from_uri(
+                file_uri=current_person_gcs_uri, mime_type="image/jpeg"
+            )
+        )
+        for garment_uri, _ in garment_uris_and_roles:
+            vto_parts.append(
+                types.Part.from_uri(
+                    file_uri=garment_uri, mime_type="image/jpeg"
                 )
-
-                # The person image is the result of the previous step.
-                person_image_part = types.Image(gcs_uri=current_person_gcs_uri)
-
-                # The product image is the current garment in the loop.
-                product_image_part = types.ProductImage(
-                    product_image=types.Image(gcs_uri=garment_gcs_uri)
-                )
-
-                # Call the VTO API for this single step.
-                response = client.models.recontext_image(
-                    model=self.cfg.VTO_MODEL_ID,
-                    source=types.RecontextImageSource(
-                        person_image=person_image_part,
-                        product_images=[product_image_part],
-                    ),
-                    config=types.RecontextImageConfig(
-                        output_gcs_uri=gcs_output_directory,
-                        number_of_images=request_dto.number_of_media,
-                    ),
-                )
-
-                # If this is the last garment, this is our final result.
-                if i == len(active_garments) - 1:
-                    final_response = response
-                # Otherwise, update the person URI for the next iteration.
-                elif (
-                    response.generated_images
-                    and response.generated_images[0].image
-                ):
-                    current_person_gcs_uri = response.generated_images[
-                        0
-                    ].image.gcs_uri
+            )
+        vto_contents = [types.Content(role="user", parts=vto_parts)]
+        vto_gen_config = types.GenerateContentConfig(
+            response_modalities=["Image"],
+        )
 
         try:
-            # After the loop, process the final response.
-            if not final_response:
-                raise ValueError(
-                    "VTO generation failed to produce a final result."
+            # --- Generate images in parallel using Gemini ---
+            async def _generate_single_vto():
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=self.cfg.VTO_GEMINI_MODEL_ID,
+                    contents=vto_contents,
+                    config=vto_gen_config,
                 )
+                for candidate in (response.candidates or []):
+                    if candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if part.inline_data:
+                                content_type = part.inline_data.mime_type or "image/jpeg"
+                                uri = self.gcs_service.store_to_gcs(
+                                    folder=self.cfg.IMAGEN_RECONTEXT_SUBFOLDER,
+                                    file_name=str(uuid.uuid4()),
+                                    mime_type=content_type,
+                                    contents=part.inline_data.data,
+                                    bucket_name=self.gcs_service.bucket_name,
+                                )
+                                if uri:
+                                    return uri, content_type
+                return None, None
 
-            all_generated_images = final_response.generated_images or []
+            vto_tasks = [
+                _generate_single_vto()
+                for _ in range(request_dto.number_of_media)
+            ]
+            vto_results = await asyncio.gather(*vto_tasks)
 
-            if not all_generated_images:
+            permanent_gcs_uris = [uri for uri, _ in vto_results if uri]
+            if not permanent_gcs_uris:
                 return None
 
-            # --- UNIFIED PROCESSING AND SAVING ---
-            # Create the list of permanent GCS URIs and the response for the frontend
-            valid_generated_images = [
-                img
-                for img in all_generated_images
-                if img.image and img.image.gcs_uri
-            ]
+            first_ct = next((ct for _, ct in vto_results if ct), "image/jpeg")
             mime_type: MimeTypeEnum = (
-                MimeTypeEnum.IMAGE_PNG
-                if valid_generated_images[0].image
-                and valid_generated_images[0].image.mime_type
-                == MimeTypeEnum.IMAGE_PNG
-                else MimeTypeEnum.IMAGE_JPEG
+                MimeTypeEnum.IMAGE_PNG if "png" in first_ct else MimeTypeEnum.IMAGE_JPEG
             )
-
-            permanent_gcs_uris = [
-                img.image.gcs_uri
-                for img in valid_generated_images
-                if img.image and img.image.gcs_uri
-            ]
 
             # 2. Create and run tasks to generate all presigned URLs in parallel
             presigned_url_tasks = [
