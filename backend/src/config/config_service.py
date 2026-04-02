@@ -74,8 +74,7 @@ class ConfigService(BaseSettings):
     VEO_MODEL_ID: str = "veo-2.0-generate-001"
 
     # --- VTO ---
-    VTO_MODEL_ID: str = "virtual-try-on-preview-08-04"
-    VTO_GEMINI_MODEL_ID: str = "gemini-2.5-flash-image"
+    VTO_MODEL_ID: str = "virtual-try-on-001"
 
     # --- Lyria ---
     LYRIA_MODEL_VERSION: str = "lyria-002"
