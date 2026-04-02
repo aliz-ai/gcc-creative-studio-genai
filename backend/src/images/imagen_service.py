@@ -186,36 +186,47 @@ def _process_vto_in_background(
                             (inp, role) for inp, role in garment_inputs if inp is not None
                         ]
 
-                        # --- Build product images for VTO API ---
-                        product_images = []
-                        for garment_input, role in active_garments:
+                        # --- Apply garments iteratively (VTO API accepts 1 garment per call) ---
+                        final_response = None
+
+                        for i, (garment_input, role) in enumerate(active_garments):
                             garment_uri = await get_gcs_uri_from_input(garment_input, role)
-                            product_images.append(
-                                types.ProductImage(
-                                    product_image=types.Image(gcs_uri=garment_uri)
-                                )
+
+                            worker_logger.info(
+                                f"Applying garment {i+1}/{len(active_garments)} with role {role}"
                             )
 
-                        worker_logger.info(
-                            f"Generating {request_dto.number_of_media} VTO image(s) "
-                            f"with model {cfg.VTO_MODEL_ID} ({len(product_images)} garment(s))"
-                        )
+                            is_last = (i == len(active_garments) - 1)
+                            response = await asyncio.to_thread(
+                                client.models.recontext_image,
+                                model=cfg.VTO_MODEL_ID,
+                                source=types.RecontextImageSource(
+                                    person_image=types.Image(gcs_uri=current_person_gcs_uri),
+                                    product_images=[
+                                        types.ProductImage(
+                                            product_image=types.Image(gcs_uri=garment_uri)
+                                        )
+                                    ],
+                                ),
+                                config=types.RecontextImageConfig(
+                                    output_gcs_uri=gcs_output_directory,
+                                    number_of_images=request_dto.number_of_media if is_last else 1,
+                                ),
+                            )
 
-                        response = await asyncio.to_thread(
-                            client.models.recontext_image,
-                            model=cfg.VTO_MODEL_ID,
-                            source=types.RecontextImageSource(
-                                person_image=types.Image(gcs_uri=current_person_gcs_uri),
-                                product_images=product_images,
-                            ),
-                            config=types.RecontextImageConfig(
-                                output_gcs_uri=gcs_output_directory,
-                                number_of_images=request_dto.number_of_media,
-                            ),
-                        )
+                            if is_last:
+                                final_response = response
+                            elif (
+                                response.generated_images
+                                and response.generated_images[0].image
+                            ):
+                                current_person_gcs_uri = response.generated_images[0].image.gcs_uri
+
+                        if not final_response:
+                            raise ValueError("VTO generation failed to produce a final result.")
 
                         valid_images = [
-                            img for img in (response.generated_images or [])
+                            img for img in (final_response.generated_images or [])
                             if img.image and img.image.gcs_uri
                         ]
                         if not valid_images:
@@ -976,32 +987,44 @@ class ImagenService:
             (inp, role) for inp, role in garment_inputs if inp is not None
         ]
 
-        # --- Build product images for VTO API ---
-        product_images = []
-        for garment_input, role in active_garments:
-            garment_uri = await get_gcs_uri_from_input(garment_input, role)
-            product_images.append(
-                types.ProductImage(
-                    product_image=types.Image(gcs_uri=garment_uri)
-                )
-            )
+        # --- Apply garments iteratively (VTO API accepts 1 garment per call) ---
+        final_response = None
 
-        try:
+        for i, (garment_input, role) in enumerate(active_garments):
+            garment_uri = await get_gcs_uri_from_input(garment_input, role)
+
+            is_last = (i == len(active_garments) - 1)
             response = await asyncio.to_thread(
                 client.models.recontext_image,
                 model=self.cfg.VTO_MODEL_ID,
                 source=types.RecontextImageSource(
                     person_image=types.Image(gcs_uri=current_person_gcs_uri),
-                    product_images=product_images,
+                    product_images=[
+                        types.ProductImage(
+                            product_image=types.Image(gcs_uri=garment_uri)
+                        )
+                    ],
                 ),
                 config=types.RecontextImageConfig(
                     output_gcs_uri=gcs_output_directory,
-                    number_of_images=request_dto.number_of_media,
+                    number_of_images=request_dto.number_of_media if is_last else 1,
                 ),
             )
 
+            if is_last:
+                final_response = response
+            elif (
+                response.generated_images
+                and response.generated_images[0].image
+            ):
+                current_person_gcs_uri = response.generated_images[0].image.gcs_uri
+
+        try:
+            if not final_response:
+                raise ValueError("VTO generation failed to produce a final result.")
+
             valid_images = [
-                img for img in (response.generated_images or [])
+                img for img in (final_response.generated_images or [])
                 if img.image and img.image.gcs_uri
             ]
             if not valid_images:
