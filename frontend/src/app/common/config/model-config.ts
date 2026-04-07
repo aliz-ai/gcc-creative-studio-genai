@@ -132,7 +132,7 @@ export const MODEL_CONFIGS: GenerationModelConfig[] = [
 
   // --- Video Models ---
   {
-    value: 'veo-3.1-generate-preview',
+    value: 'veo-3.1-generate-001',
     viewValue: 'Veo 3.1 \n (Beta Audio)',
     type: 'VIDEO',
     icon: 'volume_up',
