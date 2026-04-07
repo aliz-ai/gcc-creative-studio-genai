@@ -111,7 +111,7 @@ export class VideoComponent implements OnInit, AfterViewInit {
   // This object holds the current state of all user selections.
   searchRequest: VeoRequest = {
     prompt: '',
-    generationModel: 'veo-3.1-generate-preview',
+    generationModel: 'veo-3.1-generate-001',
     aspectRatio: '16:9',
     numberOfMedia: 4,
     style: null,
@@ -569,7 +569,7 @@ export class VideoComponent implements OnInit, AfterViewInit {
       !this.isConcatenateMode
     ) {
       const veo31Model = this.generationModels.find(
-        m => m.value === 'veo-3.1-generate-preview',
+        m => m.value === 'veo-3.1-generate-001',
       );
       if (veo31Model) {
         this.selectModel(veo31Model);
@@ -827,7 +827,7 @@ export class VideoComponent implements OnInit, AfterViewInit {
 
       if (isVeo30) {
         const veo31Model = this.generationModels.find(
-          m => m.value === 'veo-3.1-generate-preview',
+          m => m.value === 'veo-3.1-generate-001',
         );
         if (veo31Model) {
           this.selectModel(veo31Model);
@@ -1341,7 +1341,7 @@ export class VideoComponent implements OnInit, AfterViewInit {
       }
 
       const veo31Model = this.generationModels.find(
-        m => m.value === 'veo-3.1-generate-preview',
+        m => m.value === 'veo-3.1-generate-001',
       );
       if (
         veo31Model &&
